@@ -10,7 +10,7 @@
 
 Name:           keylime-agent-rust
 Version:        0.2.2
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Rust agent for Keylime
 
 # Upstream license specification: Apache-2.0
@@ -49,6 +49,10 @@ Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
 Source1:        rust-keylime-%{version}-vendor.tar.xz
 # Drop dependencies and adjust the features
 Patch0:         rust-keylime-adjust-features.patch
+# Update openssl to version 0.10.70 to fix CVE-2025-24898
+Patch1:         rust-keylime-openssl-0.10.70.patch
+# Fix unnecessary qualification warnings
+Patch2:         rust-keylime-fix-unnecessary-qualifications.patch
 
 ExclusiveArch:  %{rust_arches}
 
@@ -97,6 +101,7 @@ Provides: bundled(crate(base64)) = 0.21.0
 Provides: bundled(crate(bindgen)) = 0.63.0
 Provides: bundled(crate(bitfield)) = 0.13.2
 Provides: bundled(crate(bitflags)) = 1.3.2
+Provides: bundled(crate(bitflags)) = 2.8.0
 Provides: bundled(crate(block-buffer)) = 0.10.3
 Provides: bundled(crate(bytes)) = 1.2.1
 Provides: bundled(crate(bytestring)) = 1.1.0
@@ -181,9 +186,9 @@ Provides: bundled(crate(num_cpus)) = 1.13.1
 Provides: bundled(crate(num_threads)) = 0.1.6
 Provides: bundled(crate(oid)) = 0.2.1
 Provides: bundled(crate(once_cell)) = 1.15.0
-Provides: bundled(crate(openssl)) = 0.10.55
-Provides: bundled(crate(openssl-macros)) = 0.1.0
-Provides: bundled(crate(openssl-sys)) = 0.9.90
+Provides: bundled(crate(openssl)) = 0.10.70
+Provides: bundled(crate(openssl-macros)) = 0.1.1
+Provides: bundled(crate(openssl-sys)) = 0.9.105
 Provides: bundled(crate(parking_lot)) = 0.12.1
 Provides: bundled(crate(parking_lot_core)) = 0.9.3
 Provides: bundled(crate(paste)) = 1.0.9
@@ -269,6 +274,7 @@ Provides: bundled(crate(unicode-xid)) = 0.2.4
 Provides: bundled(crate(url)) = 2.3.1
 Provides: bundled(crate(utf8parse)) = 0.2.1
 Provides: bundled(crate(uuid)) = 1.3.1
+Provides: bundled(crate(vcpkg)) = 0.2.15
 Provides: bundled(crate(version_check)) = 0.9.4
 Provides: bundled(crate(want)) = 0.3.0
 Provides: bundled(crate(which)) = 4.3.0
@@ -354,6 +360,9 @@ chown -R keylime:keylime %{_sysconfdir}/keylime
 %endif
 
 %changelog
+* Fri Feb 07 2025 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.2-2
+- Update openssl crate to version 0.10.70 to fix CVE-2025-24898
+
 * Thu Jul 20 2023 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.2-1
 - Update to upstream release 0.2.2
 

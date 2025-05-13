@@ -1,0 +1,91 @@
+diff --git a/keylime-agent/src/crypto.rs b/keylime-agent/src/crypto.rs
+index 8ec3449..aeebe34 100644
+--- a/keylime-agent/src/crypto.rs
++++ b/keylime-agent/src/crypto.rs
+@@ -111,7 +111,7 @@ pub(crate) fn write_key_pair(
+                 _ = file.write(&key.private_key_to_pem_pkcs8()?)?;
+             } else {
+                 _ = file.write(&key.private_key_to_pem_pkcs8_passphrase(
+-                    openssl::symm::Cipher::aes_256_cbc(),
++                    Cipher::aes_256_cbc(),
+                     pw.as_bytes(),
+                 )?)?;
+             }
+diff --git a/keylime-agent/src/errors_handler.rs b/keylime-agent/src/errors_handler.rs
+index b0fa4c2..d3722d0 100644
+--- a/keylime-agent/src/errors_handler.rs
++++ b/keylime-agent/src/errors_handler.rs
+@@ -379,7 +379,7 @@ mod tests {
+         let mut app = test::init_service(
+             App::new()
+                 .wrap(
+-                    middleware::ErrorHandlers::new()
++                    ErrorHandlers::new()
+                         .handler(http::StatusCode::NOT_FOUND, wrap_404),
+                 )
+                 .app_data(
+diff --git a/keylime-agent/src/main.rs b/keylime-agent/src/main.rs
+index a17e3cb..beef809 100644
+--- a/keylime-agent/src/main.rs
++++ b/keylime-agent/src/main.rs
+@@ -10,7 +10,6 @@
+     overflowing_literals,
+     path_statements,
+     patterns_in_fns_without_body,
+-    private_in_public,
+     unconditional_recursion,
+     unused,
+     while_true,
+diff --git a/keylime-agent/src/payloads.rs b/keylime-agent/src/payloads.rs
+index e190e3a..fc58c43 100644
+--- a/keylime-agent/src/payloads.rs
++++ b/keylime-agent/src/payloads.rs
+@@ -221,7 +221,7 @@ async fn run_encrypted_payload(
+     let action_file = unzipped.join("action_list");
+ 
+     if action_file.exists() {
+-        let action_data = std::fs::read_to_string(&action_file)
++        let action_data = fs::read_to_string(&action_file)
+             .expect("unable to read action_list");
+ 
+         action_data
+diff --git a/keylime-agent/src/revocation.rs b/keylime-agent/src/revocation.rs
+index 025a929..51edcea 100644
+--- a/keylime-agent/src/revocation.rs
++++ b/keylime-agent/src/revocation.rs
+@@ -203,7 +203,7 @@ fn run_revocation_actions(
+     let action_file = unzipped.join("action_list");
+ 
+     if action_file.exists() {
+-        action_data = std::fs::read_to_string(&action_file)
++        action_data = fs::read_to_string(&action_file)
+             .expect("unable to read action_list");
+ 
+         let file_actions = parse_list(&action_data)?;
+@@ -529,7 +529,7 @@ mod tests {
+             env!("CARGO_MANIFEST_DIR"),
+             "/tests/unzipped/test_ok.json"
+         );
+-        let json_str = std::fs::read_to_string(json_file).unwrap(); //#[allow_ci]
++        let json_str = fs::read_to_string(json_file).unwrap(); //#[allow_ci]
+         let json = serde_json::from_str(&json_str).unwrap(); //#[allow_ci]
+         let actions_dir =
+             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/actions/");
+@@ -568,7 +568,7 @@ mod tests {
+             env!("CARGO_MANIFEST_DIR"),
+             "/tests/unzipped/test_err.json"
+         );
+-        let json_str = std::fs::read_to_string(json_file).unwrap(); //#[allow_ci]
++        let json_str = fs::read_to_string(json_file).unwrap(); //#[allow_ci]
+         let json = serde_json::from_str(&json_str).unwrap(); //#[allow_ci]
+         let actions_dir =
+             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/actions/");
+@@ -603,7 +603,7 @@ mod tests {
+                 let revocation_actions = "local_action_stand_alone.py, local_action_rev_script1.py";
+             }
+         }
+-        let json_str = std::fs::read_to_string(json_file).unwrap(); //#[allow_ci]
++        let json_str = fs::read_to_string(json_file).unwrap(); //#[allow_ci]
+         let json = serde_json::from_str(&json_str).unwrap(); //#[allow_ci]
+         let actions_dir =
+             &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/actions/");

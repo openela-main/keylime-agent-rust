@@ -1,5 +1,5 @@
---- a/keylime-agent/Cargo.toml	2023-05-25 11:34:50.849496112 +0200
-+++ b/keylime-agent/Cargo.toml	2023-05-25 11:35:38.163793600 +0200
+--- a/keylime-agent/Cargo.toml	2025-02-07 17:53:24.436876268 +0100
++++ b/keylime-agent/Cargo.toml	2025-02-07 17:54:06.501697761 +0100
 @@ -34,11 +34,6 @@
  tss-esapi = {version = "7.2.0", features = ["generate-bindings"]}
  thiserror = "1.0"
@@ -12,24 +12,18 @@
  
  [dev-dependencies]
  actix-rt = "2"
-@@ -46,20 +41,6 @@
- [features]
+@@ -47,12 +42,12 @@
  # The features enabled by default
  default = []
--# this should change to dev-dependencies when we have integration testing
+ # this should change to dev-dependencies when we have integration testing
 -testing = ["wiremock"]
--# Whether the agent should be compiled with support to listen for notification
--# messages on ZeroMQ
--#
--# This feature is deprecated and will be removed on next major release
++testing = []
+ # Whether the agent should be compiled with support to listen for notification
+ # messages on ZeroMQ
+ #
+ # This feature is deprecated and will be removed on next major release
 -with-zmq = ["zmq"]
--# Whether the agent should be compiled with support for python revocation
--# actions loaded as modules, which is the only kind supported by the python
--# agent (unless the enhancement-55 is implemented). See:
--# https://github.com/keylime/enhancements/blob/master/55_revocation_actions_without_python.md
--#
--# This feature is deprecated and will be removed on next major release
--legacy-python-actions = []
- 
- [package.metadata.deb]
- section = "net"
++with-zmq = []
+ # Whether the agent should be compiled with support for python revocation
+ # actions loaded as modules, which is the only kind supported by the python
+ # agent (unless the enhancement-55 is implemented). See:
