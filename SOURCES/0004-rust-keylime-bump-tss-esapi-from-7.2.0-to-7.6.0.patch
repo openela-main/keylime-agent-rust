@@ -1,0 +1,62 @@
+From 203caa94c6d899dc71845a3cdccebd20b226d3af Mon Sep 17 00:00:00 2001
+From: Anderson Toshiyuki Sasaki <ansasaki@redhat.com>
+Date: Fri, 6 Feb 2026 17:58:24 +0100
+Subject: [PATCH 4/7] Bump tss-esapi from 7.2.0 to 7.6.0
+
+The tss-esapi 7.6.0 provides the create_ek_object_2 and create_ak_2
+APIs (from rust-tss-esapi PR #546) that accept
+AsymmetricAlgorithmSelection with key size/curve info, which is
+required for ECC key support.
+
+Also bump picky-asn1-der from 0.3.1 to 0.4 and picky-asn1-x509 from
+0.6.1 to 0.12 to match the versions required by tss-esapi 7.6.0.
+
+Backported from upstream commits:
+- https://github.com/keylime/rust-keylime/commit/b5c863e
+- https://github.com/keylime/rust-keylime/commit/17202c6
+
+---
+ keylime-agent/Cargo.toml | 6 +++---
+ keylime/Cargo.toml       | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/keylime-agent/Cargo.toml b/keylime-agent/Cargo.toml
+index db6cec7..522be45 100644
+--- a/keylime-agent/Cargo.toml
++++ b/keylime-agent/Cargo.toml
+@@ -21,8 +21,8 @@ keylime = { path = "../keylime" }
+ libc = "0.2.43"
+ log = "0.4"
+ openssl = "0.10.15"
+-picky-asn1-der = "0.3.1"
+-picky-asn1-x509 = "0.6.1"
++picky-asn1-der = "0.4"
++picky-asn1-x509 = "0.12"
+ pretty_env_logger = "0.4"
+ reqwest = {version = "0.11", default-features = false, features = ["json"]}
+ serde = "1.0.80"
+@@ -31,7 +31,7 @@ serde_json = { version = "1.0", features = ["raw_value"] }
+ static_assertions = "1"
+ tempfile = "3.4.0"
+ tokio = {version = "1.24", features = ["rt", "sync", "macros"]}
+-tss-esapi = {version = "7.2.0", features = ["generate-bindings"]}
++tss-esapi = {version = "7.6.0", features = ["generate-bindings"]}
+ thiserror = "1.0"
+ uuid = {version = "1.3", features = ["v4"]}
+ 
+diff --git a/keylime/Cargo.toml b/keylime/Cargo.toml
+index 61ad8b7..ddba447 100644
+--- a/keylime/Cargo.toml
++++ b/keylime/Cargo.toml
+@@ -16,7 +16,7 @@ serde = "1.0.80"
+ serde_derive = "1.0.80"
+ static_assertions = "1"
+ thiserror = "1.0"
+-tss-esapi = {version = "7.2.0", features = ["generate-bindings"]}
++tss-esapi = {version = "7.6.0", features = ["generate-bindings"]}
+ 
+ [dev-dependencies]
+ tempfile = "3.0.4"
+-- 
+2.52.0
+

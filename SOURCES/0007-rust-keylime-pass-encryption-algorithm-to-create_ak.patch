@@ -1,0 +1,54 @@
+From 05a0c158a3d9ec1179a0b4539c28f048d1be5724 Mon Sep 17 00:00:00 2001
+From: Anderson Toshiyuki Sasaki <ansasaki@redhat.com>
+Date: Fri, 6 Feb 2026 01:00:00 +0100
+Subject: [PATCH 7/7] Pass encryption_alg to create AK
+
+---
+ keylime-agent/src/common.rs | 1 +
+ keylime-agent/src/main.rs   | 4 +++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/keylime-agent/src/common.rs b/keylime-agent/src/common.rs
+index 226bed3..a5f9975 100644
+--- a/keylime-agent/src/common.rs
++++ b/keylime-agent/src/common.rs
+@@ -333,6 +333,7 @@ mod tests {
+             ek_result.key_handle,
+             tpm_hash_alg,
+             tpm_signing_alg,
++            tpm_encryption_alg,
+         )?;
+
+         let agent_data_test = AgentData::create(
+diff --git a/keylime-agent/src/main.rs b/keylime-agent/src/main.rs
+index beef809..35c0c52 100644
+--- a/keylime-agent/src/main.rs
++++ b/keylime-agent/src/main.rs
+@@ -363,6 +363,7 @@ async fn main() -> Result<()> {
+                 ek_result.key_handle,
+                 tpm_hash_alg,
+                 tpm_signing_alg,
++                tpm_encryption_alg,
+             )?;
+             let ak_handle = ctx.load_ak(ek_result.key_handle, &new_ak)?;
+             (ak_handle, new_ak)
+@@ -848,6 +849,7 @@ mod testing {
+                 ek_result.key_handle,
+                 tpm_hash_alg,
+                 tpm_signing_alg,
++                tpm_encryption_alg,
+             )?;
+             let ak_handle = ctx.load_ak(ek_result.key_handle, &ak_result)?;
+             let ak_tpm2b_pub =
+@@ -914,7 +916,7 @@ mod testing {
+                 payload_tx,
+                 revocation_tx,
+                 hash_alg: keylime::algorithms::HashAlgorithm::Sha256,
+-                enc_alg: keylime::algorithms::EncryptionAlgorithm::Rsa,
++                enc_alg: keylime::algorithms::EncryptionAlgorithm::Rsa2048,
+                 sign_alg: keylime::algorithms::SignAlgorithm::RsaSsa,
+                 agent_uuid: test_config.agent.uuid,
+                 allow_payload_revocation_actions: test_config
+--
+2.52.0
+

@@ -10,7 +10,7 @@
 
 Name:           keylime-agent-rust
 Version:        0.2.2
-Release:        2%{?dist}
+Release:        5%{?dist}
 Summary:        Rust agent for Keylime
 
 # Upstream license specification: Apache-2.0
@@ -48,11 +48,30 @@ Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
 #   tar jcf rust-keylime-%%{version}-vendor.tar.xz vendor
 Source1:        rust-keylime-%{version}-vendor.tar.xz
 # Drop dependencies and adjust the features
-Patch0:         rust-keylime-adjust-features.patch
+Patch0:         0001-rust-keylime-adjust-features.patch
 # Update openssl to version 0.10.70 to fix CVE-2025-24898
-Patch1:         rust-keylime-openssl-0.10.70.patch
+Patch1:         0002-rust-keylime-openssl-0.10.70.patch
 # Fix unnecessary qualification warnings
-Patch2:         rust-keylime-fix-unnecessary-qualifications.patch
+Patch2:         0003-rust-keylime-fix-unnecessary-qualifications.patch
+# Bump tss-esapi from 7.2.0 to 7.6.0 for ECC key support
+# Backported from upstream commits
+# https://github.com/keylime/rust-keylime/commit/b5c863e
+# https://github.com/keylime/rust-keylime/commit/17202c6
+Patch3:         0004-rust-keylime-bump-tss-esapi-from-7.2.0-to-7.6.0.patch
+# Enable non-standard key sizes and curves for EncryptionAlgorithm
+# Backported from upstream commits
+# https://github.com/keylime/rust-keylime/commit/2c73a2a
+Patch4:         0005-rust-keylime-enable-non-standard-key-sizes-and-curve.patch
+# Update TPM functions for ECC support (EK/AK creation, credential activation)
+# Backported from upstream commits
+# https://github.com/keylime/rust-keylime/commit/af32aa2
+Patch5:         0006-rust-keylime-update-TPM-functions-for-ECC-support.patch
+# Pass encryption algorithm to create_ak
+Patch6:         0007-rust-keylime-pass-encryption-algorithm-to-create_ak.patch
+# Bump pretty-env-logger to version 0.5
+# Backported from upstream commit:
+# https://github.com/keylime/rust-keylime/commit/fbe6a03
+Patch7:         0008-rust-keylime-bump-pretty-env-logger.patch
 
 ExclusiveArch:  %{rust_arches}
 
@@ -64,228 +83,247 @@ Requires: tpm2-tss
 Requires: keylime-base
 Requires: util-linux-core
 
-BuildRequires:  systemd
-BuildRequires:  openssl-devel
-BuildRequires:  libarchive-devel
-BuildRequires:  tpm2-tss-devel
-BuildRequires:  rust-toolset
 BuildRequires:  clang
+BuildRequires:  git-core
+BuildRequires:  libarchive-devel
+BuildRequires:  openssl-devel
+BuildRequires:  rust-toolset
+BuildRequires:  systemd
+BuildRequires:  tpm2-tss-devel
 
 # Virtual Provides to support swapping between Python and Rust implementation
 Provides:       keylime-agent
 Conflicts:      keylime-agent
 
-Provides: bundled(crate(actix-codec)) = 0.5.0
-Provides: bundled(crate(actix-http)) = 3.3.1
-Provides: bundled(crate(actix-macros)) = 0.2.3
-Provides: bundled(crate(actix-router)) = 0.5.1
-Provides: bundled(crate(actix-rt)) = 2.8.0
-Provides: bundled(crate(actix-server)) = 2.1.1
-Provides: bundled(crate(actix-service)) = 2.0.2
-Provides: bundled(crate(actix-tls)) = 3.0.3
-Provides: bundled(crate(actix-utils)) = 3.0.0
-Provides: bundled(crate(actix-web)) = 4.3.1
-Provides: bundled(crate(actix-web-codegen)) = 4.2.0
-Provides: bundled(crate(ahash)) = 0.7.6
-Provides: bundled(crate(ahash)) = 0.8.3
-Provides: bundled(crate(aho-corasick)) = 0.7.19
-Provides: bundled(crate(anstream)) = 0.3.2
-Provides: bundled(crate(anstyle)) = 1.0.1
-Provides: bundled(crate(anstyle-parse)) = 0.2.1
-Provides: bundled(crate(anstyle-query)) = 1.0.0
-Provides: bundled(crate(async-trait)) = 0.1.57
-Provides: bundled(crate(atty)) = 0.2.14
-Provides: bundled(crate(autocfg)) = 1.1.0
-Provides: bundled(crate(base64)) = 0.13.1
-Provides: bundled(crate(base64)) = 0.21.0
-Provides: bundled(crate(bindgen)) = 0.63.0
-Provides: bundled(crate(bitfield)) = 0.13.2
-Provides: bundled(crate(bitflags)) = 1.3.2
-Provides: bundled(crate(bitflags)) = 2.8.0
-Provides: bundled(crate(block-buffer)) = 0.10.3
-Provides: bundled(crate(bytes)) = 1.2.1
-Provides: bundled(crate(bytestring)) = 1.1.0
-Provides: bundled(crate(cc)) = 1.0.73
+Provides: bundled(crate(actix-codec)) = 0.5.2
+Provides: bundled(crate(actix-http)) = 3.11.2
+Provides: bundled(crate(actix-macros)) = 0.2.4
+Provides: bundled(crate(actix-router)) = 0.5.3
+Provides: bundled(crate(actix-rt)) = 2.11.0
+Provides: bundled(crate(actix-server)) = 2.6.0
+Provides: bundled(crate(actix-service)) = 2.0.3
+Provides: bundled(crate(actix-tls)) = 3.5.0
+Provides: bundled(crate(actix-utils)) = 3.0.1
+Provides: bundled(crate(actix-web)) = 4.12.1
+Provides: bundled(crate(actix-web-codegen)) = 4.3.0
+Provides: bundled(crate(aho-corasick)) = 1.1.4
+Provides: bundled(crate(anstream)) = 0.6.21
+Provides: bundled(crate(anstyle)) = 1.0.13
+Provides: bundled(crate(anstyle-parse)) = 0.2.7
+Provides: bundled(crate(anstyle-query)) = 1.1.5
+Provides: bundled(crate(async-trait)) = 0.1.89
+Provides: bundled(crate(autocfg)) = 1.5.0
+Provides: bundled(crate(base64)) = 0.21.7
+Provides: bundled(crate(bindgen)) = 0.66.1
+Provides: bundled(crate(bitfield)) = 0.14.0
+Provides: bundled(crate(bitflags)) = 2.10.0
+Provides: bundled(crate(block-buffer)) = 0.10.4
+Provides: bundled(crate(bytes)) = 1.11.1
+Provides: bundled(crate(bytestring)) = 1.5.0
+Provides: bundled(crate(cc)) = 1.2.55
 Provides: bundled(crate(cexpr)) = 0.6.0
-Provides: bundled(crate(cfg-if)) = 1.0.0
-Provides: bundled(crate(clang-sys)) = 1.4.0
-Provides: bundled(crate(clap)) = 4.3.11
-Provides: bundled(crate(clap_builder)) = 4.3.11
-Provides: bundled(crate(clap_derive)) = 4.3.2
-Provides: bundled(crate(clap_lex)) = 0.5.0
-Provides: bundled(crate(colorchoice)) = 1.0.0
+Provides: bundled(crate(cfg-if)) = 1.0.4
+Provides: bundled(crate(clang-sys)) = 1.8.1
+Provides: bundled(crate(clap)) = 4.5.57
+Provides: bundled(crate(clap_builder)) = 4.5.57
+Provides: bundled(crate(clap_derive)) = 4.5.55
+Provides: bundled(crate(clap_lex)) = 0.7.7
+Provides: bundled(crate(colorchoice)) = 1.0.4
 Provides: bundled(crate(compress-tools)) = 0.12.4
-Provides: bundled(crate(config)) = 0.13.3
-Provides: bundled(crate(convert_case)) = 0.4.0
-Provides: bundled(crate(cpufeatures)) = 0.2.5
-Provides: bundled(crate(crypto-common)) = 0.1.6
-Provides: bundled(crate(derive_more)) = 0.99.17
-Provides: bundled(crate(digest)) = 0.10.5
-Provides: bundled(crate(either)) = 1.8.0
-Provides: bundled(crate(encoding_rs)) = 0.8.31
-Provides: bundled(crate(enumflags2)) = 0.7.7
-Provides: bundled(crate(enumflags2_derive)) = 0.7.7
-Provides: bundled(crate(env_logger)) = 0.7.1
-Provides: bundled(crate(errno)) = 0.3.1
-Provides: bundled(crate(fastrand)) = 1.8.0
+Provides: bundled(crate(config)) = 0.13.4
+Provides: bundled(crate(convert_case)) = 0.10.0
+Provides: bundled(crate(cpufeatures)) = 0.2.17
+Provides: bundled(crate(crypto-common)) = 0.1.7
+Provides: bundled(crate(deranged)) = 0.5.6
+Provides: bundled(crate(derive_more)) = 0.99.20
+Provides: bundled(crate(derive_more)) = 2.1.1
+Provides: bundled(crate(derive_more-impl)) = 2.1.1
+Provides: bundled(crate(digest)) = 0.10.7
+Provides: bundled(crate(displaydoc)) = 0.2.5
+Provides: bundled(crate(either)) = 1.15.0
+Provides: bundled(crate(encoding_rs)) = 0.8.35
+Provides: bundled(crate(enumflags2)) = 0.7.12
+Provides: bundled(crate(enumflags2_derive)) = 0.7.12
+Provides: bundled(crate(env_logger)) = 0.10.2
+Provides: bundled(crate(equivalent)) = 1.0.2
+Provides: bundled(crate(errno)) = 0.3.14
+Provides: bundled(crate(fastrand)) = 2.3.0
+Provides: bundled(crate(find-msvc-tools)) = 0.1.9
 Provides: bundled(crate(fnv)) = 1.0.7
+Provides: bundled(crate(foldhash)) = 0.1.5
 Provides: bundled(crate(foreign-types)) = 0.3.2
 Provides: bundled(crate(foreign-types-shared)) = 0.1.1
-Provides: bundled(crate(form_urlencoded)) = 1.1.0
-Provides: bundled(crate(futures)) = 0.3.27
-Provides: bundled(crate(futures-channel)) = 0.3.27
-Provides: bundled(crate(futures-core)) = 0.3.27
-Provides: bundled(crate(futures-executor)) = 0.3.27
-Provides: bundled(crate(futures-io)) = 0.3.27
-Provides: bundled(crate(futures-macro)) = 0.3.27
-Provides: bundled(crate(futures-sink)) = 0.3.27
-Provides: bundled(crate(futures-task)) = 0.3.27
-Provides: bundled(crate(futures-util)) = 0.3.27
-Provides: bundled(crate(generic-array)) = 0.14.6
-Provides: bundled(crate(getrandom)) = 0.2.7
-Provides: bundled(crate(glob)) = 0.3.1
-Provides: bundled(crate(h2)) = 0.3.17
-Provides: bundled(crate(hashbrown)) = 0.12.3
-Provides: bundled(crate(heck)) = 0.4.0
+Provides: bundled(crate(form_urlencoded)) = 1.2.2
+Provides: bundled(crate(futures)) = 0.3.31
+Provides: bundled(crate(futures-channel)) = 0.3.31
+Provides: bundled(crate(futures-core)) = 0.3.31
+Provides: bundled(crate(futures-executor)) = 0.3.31
+Provides: bundled(crate(futures-io)) = 0.3.31
+Provides: bundled(crate(futures-macro)) = 0.3.31
+Provides: bundled(crate(futures-sink)) = 0.3.31
+Provides: bundled(crate(futures-task)) = 0.3.31
+Provides: bundled(crate(futures-util)) = 0.3.31
+Provides: bundled(crate(generic-array)) = 0.14.7
+Provides: bundled(crate(getrandom)) = 0.2.17
+Provides: bundled(crate(getrandom)) = 0.3.4
+Provides: bundled(crate(getrandom)) = 0.4.1
+Provides: bundled(crate(glob)) = 0.3.3
+Provides: bundled(crate(h2)) = 0.3.27
+Provides: bundled(crate(hashbrown)) = 0.16.1
+Provides: bundled(crate(heck)) = 0.5.0
 Provides: bundled(crate(hex)) = 0.4.3
+Provides: bundled(crate(home)) = 0.5.12
 Provides: bundled(crate(hostname-validator)) = 1.1.1
-Provides: bundled(crate(http)) = 0.2.8
-Provides: bundled(crate(http-body)) = 0.4.5
-Provides: bundled(crate(httparse)) = 1.8.0
-Provides: bundled(crate(httpdate)) = 1.0.2
-Provides: bundled(crate(humantime)) = 1.3.0
-Provides: bundled(crate(hyper)) = 0.14.20
-Provides: bundled(crate(idna)) = 0.3.0
-Provides: bundled(crate(indexmap)) = 1.9.1
-Provides: bundled(crate(io-lifetimes)) = 1.0.10
-Provides: bundled(crate(ipnet)) = 2.5.0
-Provides: bundled(crate(is-terminal)) = 0.4.7
-Provides: bundled(crate(itoa)) = 1.0.3
-Provides: bundled(crate(keylime)) = 0.2.2
-Provides: bundled(crate(keylime_agent)) = 0.2.2
-Provides: bundled(crate(keylime_ima_emulator)) = 0.2.2
+Provides: bundled(crate(http)) = 0.2.12
+Provides: bundled(crate(http-body)) = 0.4.6
+Provides: bundled(crate(httparse)) = 1.10.1
+Provides: bundled(crate(httpdate)) = 1.0.3
+Provides: bundled(crate(humantime)) = 2.3.0
+Provides: bundled(crate(hyper)) = 0.14.32
+Provides: bundled(crate(icu_collections)) = 2.1.1
+Provides: bundled(crate(icu_locale_core)) = 2.1.1
+Provides: bundled(crate(icu_normalizer)) = 2.1.1
+Provides: bundled(crate(icu_normalizer_data)) = 2.1.1
+Provides: bundled(crate(icu_properties)) = 2.1.2
+Provides: bundled(crate(icu_properties_data)) = 2.1.2
+Provides: bundled(crate(icu_provider)) = 2.1.1
+Provides: bundled(crate(idna)) = 1.1.0
+Provides: bundled(crate(idna_adapter)) = 1.2.1
+Provides: bundled(crate(impl-more)) = 0.1.9
+Provides: bundled(crate(indexmap)) = 2.13.0
+Provides: bundled(crate(ipnet)) = 2.11.0
+Provides: bundled(crate(is-terminal)) = 0.4.17
+Provides: bundled(crate(is_terminal_polyfill)) = 1.70.2
+Provides: bundled(crate(itoa)) = 1.0.17
 Provides: bundled(crate(language-tags)) = 0.3.2
-Provides: bundled(crate(lazy_static)) = 1.4.0
+Provides: bundled(crate(lazy_static)) = 1.5.0
 Provides: bundled(crate(lazycell)) = 1.3.0
-Provides: bundled(crate(libc)) = 0.2.147
-Provides: bundled(crate(libloading)) = 0.7.3
-Provides: bundled(crate(linux-raw-sys)) = 0.3.1
-Provides: bundled(crate(local-channel)) = 0.1.3
-Provides: bundled(crate(local-waker)) = 0.1.3
-Provides: bundled(crate(lock_api)) = 0.4.9
-Provides: bundled(crate(log)) = 0.4.17
-Provides: bundled(crate(mbox)) = 0.6.0
-Provides: bundled(crate(memchr)) = 2.5.0
-Provides: bundled(crate(mime)) = 0.3.16
+Provides: bundled(crate(libc)) = 0.2.181
+Provides: bundled(crate(libloading)) = 0.8.9
+Provides: bundled(crate(linux-raw-sys)) = 0.4.15
+Provides: bundled(crate(linux-raw-sys)) = 0.11.0
+Provides: bundled(crate(litemap)) = 0.8.1
+Provides: bundled(crate(local-waker)) = 0.1.4
+Provides: bundled(crate(lock_api)) = 0.4.14
+Provides: bundled(crate(log)) = 0.4.29
+Provides: bundled(crate(mbox)) = 0.7.1
+Provides: bundled(crate(memchr)) = 2.8.0
+Provides: bundled(crate(mime)) = 0.3.17
 Provides: bundled(crate(minimal-lexical)) = 0.2.1
-Provides: bundled(crate(mio)) = 0.8.4
-Provides: bundled(crate(nom)) = 7.1.1
-Provides: bundled(crate(num-derive)) = 0.3.3
-Provides: bundled(crate(num-traits)) = 0.2.15
-Provides: bundled(crate(num_cpus)) = 1.13.1
-Provides: bundled(crate(num_threads)) = 0.1.6
+Provides: bundled(crate(mio)) = 1.1.1
+Provides: bundled(crate(nom)) = 7.1.3
+Provides: bundled(crate(num-conv)) = 0.2.0
+Provides: bundled(crate(num-derive)) = 0.4.2
+Provides: bundled(crate(num-traits)) = 0.2.19
 Provides: bundled(crate(oid)) = 0.2.1
-Provides: bundled(crate(once_cell)) = 1.15.0
-Provides: bundled(crate(openssl)) = 0.10.70
+Provides: bundled(crate(once_cell)) = 1.21.3
+Provides: bundled(crate(openssl)) = 0.10.75
 Provides: bundled(crate(openssl-macros)) = 0.1.1
-Provides: bundled(crate(openssl-sys)) = 0.9.105
-Provides: bundled(crate(parking_lot)) = 0.12.1
-Provides: bundled(crate(parking_lot_core)) = 0.9.3
-Provides: bundled(crate(paste)) = 1.0.9
-Provides: bundled(crate(pathdiff)) = 0.2.1
+Provides: bundled(crate(openssl-sys)) = 0.9.111
+Provides: bundled(crate(parking_lot)) = 0.12.5
+Provides: bundled(crate(parking_lot_core)) = 0.9.12
+Provides: bundled(crate(pathdiff)) = 0.2.3
 Provides: bundled(crate(peeking_take_while)) = 0.1.2
-Provides: bundled(crate(percent-encoding)) = 2.2.0
-Provides: bundled(crate(pest)) = 2.7.0
-Provides: bundled(crate(pest_derive)) = 2.7.0
-Provides: bundled(crate(pest_generator)) = 2.7.0
-Provides: bundled(crate(pest_meta)) = 2.7.0
-Provides: bundled(crate(picky-asn1)) = 0.3.3
-Provides: bundled(crate(picky-asn1)) = 0.5.0
-Provides: bundled(crate(picky-asn1-der)) = 0.2.5
-Provides: bundled(crate(picky-asn1-der)) = 0.3.1
-Provides: bundled(crate(picky-asn1-x509)) = 0.6.1
-Provides: bundled(crate(pin-project-lite)) = 0.2.9
+Provides: bundled(crate(percent-encoding)) = 2.3.2
+Provides: bundled(crate(pest)) = 2.8.6
+Provides: bundled(crate(pest_derive)) = 2.8.6
+Provides: bundled(crate(pest_generator)) = 2.8.6
+Provides: bundled(crate(pest_meta)) = 2.8.6
+Provides: bundled(crate(picky-asn1)) = 0.8.0
+Provides: bundled(crate(picky-asn1-der)) = 0.4.1
+Provides: bundled(crate(picky-asn1-x509)) = 0.12.0
+Provides: bundled(crate(pin-project-lite)) = 0.2.16
 Provides: bundled(crate(pin-utils)) = 0.1.0
-Provides: bundled(crate(pkg-config)) = 0.3.25
-Provides: bundled(crate(ppv-lite86)) = 0.2.16
-Provides: bundled(crate(pretty_env_logger)) = 0.4.0
-Provides: bundled(crate(proc-macro2)) = 1.0.64
-Provides: bundled(crate(quick-error)) = 1.2.3
-Provides: bundled(crate(quote)) = 1.0.29
-Provides: bundled(crate(rand)) = 0.8.5
-Provides: bundled(crate(rand_chacha)) = 0.3.1
-Provides: bundled(crate(rand_core)) = 0.6.4
-Provides: bundled(crate(regex)) = 1.6.0
-Provides: bundled(crate(regex-syntax)) = 0.6.27
-Provides: bundled(crate(reqwest)) = 0.11.16
+Provides: bundled(crate(pkg-config)) = 0.3.32
+Provides: bundled(crate(potential_utf)) = 0.1.4
+Provides: bundled(crate(powerfmt)) = 0.2.0
+Provides: bundled(crate(pretty_env_logger)) = 0.5.0
+Provides: bundled(crate(prettyplease)) = 0.2.37
+Provides: bundled(crate(proc-macro2)) = 1.0.106
+Provides: bundled(crate(quote)) = 1.0.44
+Provides: bundled(crate(regex)) = 1.12.3
+Provides: bundled(crate(regex-automata)) = 0.4.14
+Provides: bundled(crate(regex-lite)) = 0.1.9
+Provides: bundled(crate(regex-syntax)) = 0.8.9
+Provides: bundled(crate(reqwest)) = 0.11.27
 Provides: bundled(crate(rustc-hash)) = 1.1.0
-Provides: bundled(crate(rustc_version)) = 0.3.3
-Provides: bundled(crate(rustc_version)) = 0.4.0
-Provides: bundled(crate(rustix)) = 0.37.11
-Provides: bundled(crate(ryu)) = 1.0.11
-Provides: bundled(crate(scopeguard)) = 1.1.0
-Provides: bundled(crate(semver)) = 0.11.0
-Provides: bundled(crate(semver)) = 1.0.14
-Provides: bundled(crate(semver-parser)) = 0.10.2
-Provides: bundled(crate(serde)) = 1.0.166
-Provides: bundled(crate(serde_bytes)) = 0.11.7
-Provides: bundled(crate(serde_derive)) = 1.0.166
-Provides: bundled(crate(serde_json)) = 1.0.96
+Provides: bundled(crate(rustc_version)) = 0.4.1
+Provides: bundled(crate(rustix)) = 0.38.44
+Provides: bundled(crate(rustix)) = 1.1.3
+Provides: bundled(crate(ryu)) = 1.0.23
+Provides: bundled(crate(scopeguard)) = 1.2.0
+Provides: bundled(crate(semver)) = 1.0.27
+Provides: bundled(crate(serde)) = 1.0.228
+Provides: bundled(crate(serde_bytes)) = 0.11.19
+Provides: bundled(crate(serde_core)) = 1.0.228
+Provides: bundled(crate(serde_derive)) = 1.0.228
+Provides: bundled(crate(serde_json)) = 1.0.149
 Provides: bundled(crate(serde_urlencoded)) = 0.7.1
-Provides: bundled(crate(sha1)) = 0.10.5
-Provides: bundled(crate(sha2)) = 0.10.6
-Provides: bundled(crate(shlex)) = 1.1.0
-Provides: bundled(crate(signal-hook)) = 0.3.15
-Provides: bundled(crate(signal-hook-registry)) = 1.4.0
-Provides: bundled(crate(slab)) = 0.4.7
-Provides: bundled(crate(smallvec)) = 1.9.0
-Provides: bundled(crate(socket2)) = 0.4.9
-Provides: bundled(crate(stable_deref_trait)) = 1.2.0
+Provides: bundled(crate(sha2)) = 0.10.9
+Provides: bundled(crate(shlex)) = 1.3.0
+Provides: bundled(crate(signal-hook)) = 0.3.18
+Provides: bundled(crate(signal-hook-registry)) = 1.4.8
+Provides: bundled(crate(slab)) = 0.4.12
+Provides: bundled(crate(smallvec)) = 1.15.1
+Provides: bundled(crate(socket2)) = 0.5.10
+Provides: bundled(crate(socket2)) = 0.6.2
+Provides: bundled(crate(stable_deref_trait)) = 1.2.1
 Provides: bundled(crate(static_assertions)) = 1.1.0
-Provides: bundled(crate(strsim)) = 0.10.0
-Provides: bundled(crate(syn)) = 1.0.100
-Provides: bundled(crate(syn)) = 2.0.25
-Provides: bundled(crate(synstructure)) = 0.12.6
-Provides: bundled(crate(target-lexicon)) = 0.12.4
-Provides: bundled(crate(tempfile)) = 3.6.0
-Provides: bundled(crate(termcolor)) = 1.1.3
-Provides: bundled(crate(thiserror)) = 1.0.40
-Provides: bundled(crate(thiserror-impl)) = 1.0.40
-Provides: bundled(crate(time)) = 0.3.14
-Provides: bundled(crate(tinyvec)) = 1.6.0
-Provides: bundled(crate(tinyvec_macros)) = 0.1.0
-Provides: bundled(crate(tokio)) = 1.28.2
-Provides: bundled(crate(tokio-macros)) = 2.1.0
-Provides: bundled(crate(tokio-openssl)) = 0.6.3
-Provides: bundled(crate(tokio-util)) = 0.7.4
-Provides: bundled(crate(toml)) = 0.5.9
-Provides: bundled(crate(tower-service)) = 0.3.2
-Provides: bundled(crate(tracing)) = 0.1.36
-Provides: bundled(crate(tracing-core)) = 0.1.29
-Provides: bundled(crate(try-lock)) = 0.2.3
-Provides: bundled(crate(tss-esapi)) = 7.2.0
-Provides: bundled(crate(tss-esapi-sys)) = 0.4.0
-Provides: bundled(crate(typenum)) = 1.15.0
-Provides: bundled(crate(ucd-trie)) = 0.1.5
-Provides: bundled(crate(unicode-bidi)) = 0.3.8
-Provides: bundled(crate(unicode-ident)) = 1.0.4
-Provides: bundled(crate(unicode-normalization)) = 0.1.22
-Provides: bundled(crate(unicode-xid)) = 0.2.4
-Provides: bundled(crate(url)) = 2.3.1
-Provides: bundled(crate(utf8parse)) = 0.2.1
-Provides: bundled(crate(uuid)) = 1.3.1
+Provides: bundled(crate(strsim)) = 0.11.1
+Provides: bundled(crate(syn)) = 2.0.114
+Provides: bundled(crate(sync_wrapper)) = 0.1.2
+Provides: bundled(crate(synstructure)) = 0.13.2
+Provides: bundled(crate(target-lexicon)) = 0.12.16
+Provides: bundled(crate(tempfile)) = 3.25.0
+Provides: bundled(crate(termcolor)) = 1.4.1
+Provides: bundled(crate(thiserror)) = 1.0.69
+Provides: bundled(crate(thiserror-impl)) = 1.0.69
+Provides: bundled(crate(time)) = 0.3.47
+Provides: bundled(crate(time-core)) = 0.1.8
+Provides: bundled(crate(time-macros)) = 0.2.27
+Provides: bundled(crate(tinystr)) = 0.8.2
+Provides: bundled(crate(tokio)) = 1.49.0
+Provides: bundled(crate(tokio-macros)) = 2.6.0
+Provides: bundled(crate(tokio-openssl)) = 0.6.5
+Provides: bundled(crate(tokio-util)) = 0.7.18
+Provides: bundled(crate(toml)) = 0.5.11
+Provides: bundled(crate(tower-service)) = 0.3.3
+Provides: bundled(crate(tracing)) = 0.1.44
+Provides: bundled(crate(tracing-attributes)) = 0.1.31
+Provides: bundled(crate(tracing-core)) = 0.1.36
+Provides: bundled(crate(try-lock)) = 0.2.5
+Provides: bundled(crate(tss-esapi)) = 7.6.0
+Provides: bundled(crate(tss-esapi-sys)) = 0.5.0
+Provides: bundled(crate(typenum)) = 1.19.0
+Provides: bundled(crate(ucd-trie)) = 0.1.7
+Provides: bundled(crate(unicode-ident)) = 1.0.23
+Provides: bundled(crate(unicode-segmentation)) = 1.12.0
+Provides: bundled(crate(unicode-xid)) = 0.2.6
+Provides: bundled(crate(url)) = 2.5.8
+Provides: bundled(crate(utf8_iter)) = 1.0.4
+Provides: bundled(crate(utf8parse)) = 0.2.2
+Provides: bundled(crate(uuid)) = 1.20.0
 Provides: bundled(crate(vcpkg)) = 0.2.15
-Provides: bundled(crate(version_check)) = 0.9.4
-Provides: bundled(crate(want)) = 0.3.0
-Provides: bundled(crate(which)) = 4.3.0
-Provides: bundled(crate(zeroize)) = 1.5.7
-Provides: bundled(crate(zeroize_derive)) = 1.3.2
+Provides: bundled(crate(version_check)) = 0.9.5
+Provides: bundled(crate(want)) = 0.3.1
+Provides: bundled(crate(which)) = 4.4.2
+Provides: bundled(crate(writeable)) = 0.6.2
+Provides: bundled(crate(yoke)) = 0.8.1
+Provides: bundled(crate(yoke-derive)) = 0.8.1
+Provides: bundled(crate(zerofrom)) = 0.1.6
+Provides: bundled(crate(zerofrom-derive)) = 0.1.6
+Provides: bundled(crate(zeroize)) = 1.8.2
+Provides: bundled(crate(zeroize_derive)) = 1.4.3
+Provides: bundled(crate(zerotrie)) = 0.2.3
+Provides: bundled(crate(zerovec)) = 0.11.5
+Provides: bundled(crate(zerovec-derive)) = 0.11.2
+Provides: bundled(crate(zmij)) = 1.0.20
 
 %description
 Rust agent for Keylime
 
 %prep
-%autosetup -N -n rust-keylime-%{version}
+%autosetup -S git -N -n rust-keylime-%{version} -a1
 %cargo_prep -V 1
 %autopatch -p1
 
@@ -294,12 +332,11 @@ Rust agent for Keylime
 find -name '*.rs' -type f -perm /111 -exec chmod -v -x '{}' '+'
 
 %build
-%cargo_build --no-default-features
+%cargo_build -n
 
 %install
 mkdir -p %{buildroot}/%{_sharedstatedir}/keylime
 mkdir -p --mode=0700 %{buildroot}/%{_rundir}/keylime
-mkdir -p --mode=0700 %{buildroot}/%{_libexecdir}/keylime
 mkdir -p --mode=0700  %{buildroot}/%{_sysconfdir}/keylime
 mkdir -p --mode=0700  %{buildroot}/%{_sysconfdir}/keylime/agent.conf.d
 
@@ -350,7 +387,6 @@ chown -R keylime:keylime %{_sysconfdir}/keylime
 %{_unitdir}/var-lib-keylime-secure.mount
 %attr(700,keylime,keylime) %dir %{_rundir}/keylime
 %attr(700,keylime,keylime) %{_sharedstatedir}/keylime
-%attr(500,keylime,keylime) %{_libexecdir}/keylime
 %{_bindir}/keylime_agent
 %{_bindir}/keylime_ima_emulator
 
@@ -360,6 +396,17 @@ chown -R keylime:keylime %{_sysconfdir}/keylime
 %endif
 
 %changelog
+* Wed Feb 11 2026 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.2-5
+- Enable attestation with TPM ECC keys
+  Resolves: RHEL-118148
+
+* Tue Feb 03 2026 Sergio Correia <scorreia@redhat.com> - 0.2.2-4
+- Remove /usr/libexec/keylime/
+  Resolves: RHEL-145712
+
+* Mon Jan 12 2026 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.2-3
+- Fix cargo_build macro usage
+
 * Fri Feb 07 2025 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.2-2
 - Update openssl crate to version 0.10.70 to fix CVE-2025-24898
 
