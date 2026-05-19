@@ -1,0 +1,514 @@
+From 3cbb5cddc5e149619ea11c797d2963e68b50b280 Mon Sep 17 00:00:00 2001
+From: Anderson Toshiyuki Sasaki <ansasaki@redhat.com>
+Date: Tue, 10 Mar 2026 10:47:01 +0100
+Subject: [PATCH 1/2] push-attestation: Use registrar TLS port when TLS is
+ enabled
+
+The push-attestation agent was using the plaintext registrar port (8890)
+even when TLS was enabled, but the registrar listens on a separate port
+for TLS connections (8891). Add a registrar_tls_port config option and
+use it when TLS is active.
+
+The decision on whether using TLS or not is consolidated in
+create_registrar_tls_config(), which now sets the registrar_tls_port in
+RegistrarTlsConfig.  Downstream code (register_agent) simply uses the
+port from the TLS config when present, or falls back to the plaintext
+port.
+
+Port constants (DEFAULT_REGISTRAR_PORT, DEFAULT_REGISTRAR_TLS_PORT) are
+used instead of hardcoded values.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Signed-off-by: Anderson Toshiyuki Sasaki <ansasaki@redhat.com>
+---
+ keylime-agent.conf                           |  8 ++
+ keylime-push-model-agent/src/main.rs         | 11 +++
+ keylime-push-model-agent/src/registration.rs | 85 +++++++++++++++-----
+ keylime/src/config/base.rs                   |  3 +
+ keylime/src/config/push_model.rs             |  2 +
+ keylime/src/config/testing.rs                |  6 +-
+ 6 files changed, 95 insertions(+), 20 deletions(-)
+
+diff --git a/keylime-agent.conf b/keylime-agent.conf
+index 4ed60ccf5..a9d822070 100644
+--- a/keylime-agent.conf
++++ b/keylime-agent.conf
+@@ -61,6 +61,14 @@ contact_port = 9002
+ registrar_ip = "127.0.0.1"
+ registrar_port = 8890
+ 
++# The TLS port of the registrar server which agent communicates with when
++# registrar_tls_enabled is set to true.
++# This is the port the registrar listens on for TLS connections.
++#
++# To override registrar_tls_port, set KEYLIME_AGENT_REGISTRAR_TLS_PORT
++# environment variable.
++registrar_tls_port = 8891
++
+ # Enable TLS communication between agent and registrar.
+ # When enabled, the agent will use TLS (server verification only) when
+ # communicating with the registrar. The registrar_tls_ca_cert option must be
+diff --git a/keylime-push-model-agent/src/main.rs b/keylime-push-model-agent/src/main.rs
+index bd0656d97..a9753bf8a 100644
+--- a/keylime-push-model-agent/src/main.rs
++++ b/keylime-push-model-agent/src/main.rs
+@@ -117,6 +117,7 @@ fn create_registrar_tls_config<T: PushModelConfigTrait>(
+             ca_cert: Some(ca_cert.to_string()),
+             disable_tls: None,
+             timeout: Some(timeout),
++            registrar_tls_port: config.registrar_tls_port(),
+         });
+     }
+ 
+@@ -346,10 +347,12 @@ async fn main() -> Result<()> {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use keylime::config::DEFAULT_REGISTRAR_TLS_PORT;
+ 
+     // Mock config for testing
+     struct MockConfig {
+         tls_enabled: bool,
++        tls_port: u32,
+         ca_cert: String,
+         backoff_max_delay: Option<u64>,
+         backoff_max_retries: Option<u32>,
+@@ -421,6 +424,9 @@ mod tests {
+         fn registrar_port(&self) -> u32 {
+             0
+         }
++        fn registrar_tls_port(&self) -> u32 {
++            self.tls_port
++        }
+         fn tpm_encryption_alg(&self) -> &str {
+             ""
+         }
+@@ -446,6 +452,7 @@ mod tests {
+         // Test when TLS is disabled
+         let config = MockConfig {
+             tls_enabled: false,
++            tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+             ca_cert: "".to_string(),
+             backoff_max_delay: None,
+             backoff_max_retries: None,
+@@ -461,6 +468,7 @@ mod tests {
+         // Test when TLS is enabled with CA certificate (push model doesn't use client certs)
+         let config = MockConfig {
+             tls_enabled: true,
++            tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+             ca_cert: "/path/to/ca.crt".to_string(),
+             backoff_max_delay: None,
+             backoff_max_retries: None,
+@@ -474,6 +482,7 @@ mod tests {
+         assert_eq!(tls_config.ca_cert, Some("/path/to/ca.crt".to_string()));
+         assert_eq!(tls_config.timeout, Some(5000));
+         assert_eq!(tls_config.disable_tls, None);
++        assert_eq!(tls_config.registrar_tls_port, DEFAULT_REGISTRAR_TLS_PORT);
+     }
+ 
+     #[test]
+@@ -481,6 +490,7 @@ mod tests {
+         // Test when TLS is enabled but no CA certificate path is provided
+         let config = MockConfig {
+             tls_enabled: true,
++            tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+             ca_cert: "".to_string(),
+             backoff_max_delay: None,
+             backoff_max_retries: None,
+@@ -496,6 +506,7 @@ mod tests {
+         // Test that custom timeout is properly set
+         let config = MockConfig {
+             tls_enabled: true,
++            tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+             ca_cert: "/path/to/ca.crt".to_string(),
+             backoff_max_delay: None,
+             backoff_max_retries: None,
+diff --git a/keylime-push-model-agent/src/registration.rs b/keylime-push-model-agent/src/registration.rs
+index bc5e3b283..0189cb15b 100644
+--- a/keylime-push-model-agent/src/registration.rs
++++ b/keylime-push-model-agent/src/registration.rs
+@@ -9,10 +9,15 @@ use keylime::{
+ 
+ /// TLS configuration for registrar communication in push model.
+ /// Push model uses server-only TLS verification (no client certificates/mTLS).
++///
++/// When this struct is `Some`, TLS is considered active: the registrar client
++/// will use HTTPS, and `registrar_tls_port` will be used instead of the
++/// plaintext port.
+ pub struct RegistrarTlsConfig {
+     pub ca_cert: Option<String>,
+     pub disable_tls: Option<bool>,
+     pub timeout: Option<u64>,
++    pub registrar_tls_port: u32,
+ }
+ 
+ pub async fn check_registration(
+@@ -55,18 +60,26 @@ pub async fn register_agent(
+     // Resolve agent UUID using the centralized helper
+     let agent_uuid = context_info.resolve_agent_id(config.uuid());
+ 
+-    // Extract TLS config values; push model doesn't use client certs (no mTLS)
+-    let (ca_cert, disable_tls, timeout) = if let Some(tls) = tls_config {
+-        (tls.ca_cert, tls.disable_tls, tls.timeout)
+-    } else {
+-        (None, None, None)
+-    };
++    // Extract TLS config values; push model doesn't use client certs (no mTLS).
++    // When tls_config is Some, TLS is active: use the TLS port and CA cert.
++    // When None, TLS is not active: use the plaintext port.
++    let (ca_cert, disable_tls, timeout, registrar_port) =
++        if let Some(tls) = tls_config {
++            (
++                tls.ca_cert,
++                tls.disable_tls,
++                tls.timeout,
++                tls.registrar_tls_port,
++            )
++        } else {
++            (None, None, None, config.registrar_port())
++        };
+ 
+     let ac = AgentRegistrationConfig {
+         contact_ip: config.contact_ip().to_string(),
+         contact_port: config.contact_port(),
+         registrar_ip: config.registrar_ip().to_string(),
+-        registrar_port: config.registrar_port(),
++        registrar_port,
+         enable_iak_idevid: config.enable_iak_idevid(),
+         ek_handle: config
+             .ek_handle()
+@@ -114,7 +127,10 @@ mod tests {
+     use super::*;
+ 
+     use keylime::{
+-        config::get_testing_config,
++        config::{
++            get_testing_config, DEFAULT_REGISTRAR_PORT,
++            DEFAULT_REGISTRAR_TLS_PORT,
++        },
+         context_info::{AlgorithmConfigurationString, ContextInfo},
+         tpm::testing,
+     };
+@@ -164,6 +180,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         assert_eq!(tls_config.ca_cert, Some("/path/to/ca.pem".to_string()));
+@@ -177,6 +194,7 @@ mod tests {
+             ca_cert: None,
+             disable_tls: None,
+             timeout: None,
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         assert_eq!(tls_config.ca_cert, None);
+@@ -190,6 +208,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: Some(true),
+             timeout: Some(10000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         assert_eq!(tls_config.ca_cert, Some("/path/to/ca.pem".to_string()));
+@@ -203,6 +222,7 @@ mod tests {
+             ca_cert: Some("".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(0),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         assert_eq!(tls_config.ca_cert, Some("".to_string()));
+@@ -233,6 +253,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         // Test with None context_info but Some tls_config (should not register)
+@@ -268,6 +289,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         let result =
+@@ -305,6 +327,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: None,
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         let result =
+@@ -342,6 +365,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: Some(true),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         let result =
+@@ -413,6 +437,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: None,
+             timeout: Some(0),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+         assert_eq!(tls_config_zero.timeout, Some(0));
+ 
+@@ -421,6 +446,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: None,
+             timeout: Some(300000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+         assert_eq!(tls_config_large.timeout, Some(300000));
+ 
+@@ -429,6 +455,7 @@ mod tests {
+             ca_cert: Some("/path/to/ca.pem".to_string()),
+             disable_tls: None,
+             timeout: None,
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+         assert_eq!(tls_config_none.timeout, None);
+     }
+@@ -439,32 +466,47 @@ mod tests {
+             ca_cert: Some("/ca.pem".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         });
+ 
+-        let (ca_cert, disable_tls, timeout) = if let Some(tls) = tls_config {
+-            (tls.ca_cert, tls.disable_tls, tls.timeout)
+-        } else {
+-            (None, None, None)
+-        };
++        let (ca_cert, disable_tls, timeout, registrar_port) =
++            if let Some(tls) = tls_config {
++                (
++                    tls.ca_cert,
++                    tls.disable_tls,
++                    tls.timeout,
++                    tls.registrar_tls_port,
++                )
++            } else {
++                (None, None, None, DEFAULT_REGISTRAR_PORT)
++            };
+ 
+         assert_eq!(ca_cert, Some("/ca.pem".to_string()));
+         assert_eq!(disable_tls, Some(false));
+         assert_eq!(timeout, Some(5000));
++        assert_eq!(registrar_port, DEFAULT_REGISTRAR_TLS_PORT);
+     }
+ 
+     #[actix_rt::test]
+     async fn test_tls_config_extraction_none() {
+         let tls_config: Option<RegistrarTlsConfig> = None;
+ 
+-        let (ca_cert, disable_tls, timeout) = if let Some(tls) = tls_config {
+-            (tls.ca_cert, tls.disable_tls, tls.timeout)
+-        } else {
+-            (None, None, None)
+-        };
++        let (ca_cert, disable_tls, timeout, registrar_port) =
++            if let Some(tls) = tls_config {
++                (
++                    tls.ca_cert,
++                    tls.disable_tls,
++                    tls.timeout,
++                    tls.registrar_tls_port,
++                )
++            } else {
++                (None, None, None, DEFAULT_REGISTRAR_PORT)
++            };
+ 
+         assert_eq!(ca_cert, None);
+         assert_eq!(disable_tls, None);
+         assert_eq!(timeout, None);
++        assert_eq!(registrar_port, DEFAULT_REGISTRAR_PORT);
+     }
+ 
+     #[tokio::test]
+@@ -503,6 +545,7 @@ mod tests {
+             ca_cert: Some(ca_path.to_string_lossy().to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         // Should fail due to invalid port, but TLS config should be processed
+@@ -529,7 +572,7 @@ mod tests {
+         config.exponential_backoff_max_retries = None;
+         config.exponential_backoff_max_delay = None;
+         config.registrar_ip = "127.0.0.1".to_string();
+-        config.registrar_port = 8891;
++        config.registrar_port = DEFAULT_REGISTRAR_TLS_PORT;
+ 
+         let _guard = keylime::config::TestConfigGuard::new(config);
+ 
+@@ -541,6 +584,7 @@ mod tests {
+             ca_cert: Some("/nonexistent/ca.pem".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         // Should fail due to missing certificate files
+@@ -562,6 +606,7 @@ mod tests {
+             ca_cert: Some(ca_path.to_string_lossy().to_string()),
+             disable_tls: Some(false),
+             timeout: Some(10000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         // Verify all fields are set correctly
+@@ -571,6 +616,7 @@ mod tests {
+         );
+         assert_eq!(tls_config.disable_tls, Some(false));
+         assert_eq!(tls_config.timeout, Some(10000));
++        assert_eq!(tls_config.registrar_tls_port, DEFAULT_REGISTRAR_TLS_PORT);
+     }
+ 
+     #[tokio::test]
+@@ -602,6 +648,7 @@ mod tests {
+             ca_cert: Some("".to_string()),
+             disable_tls: Some(false),
+             timeout: Some(5000),
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+         };
+ 
+         let result =
+diff --git a/keylime/src/config/base.rs b/keylime/src/config/base.rs
+index c171c8592..31fdc44ef 100644
+--- a/keylime/src/config/base.rs
++++ b/keylime/src/config/base.rs
+@@ -36,6 +36,7 @@ pub static DEFAULT_IP: &str = "127.0.0.1";
+ pub static DEFAULT_PORT: u32 = 9002;
+ pub static DEFAULT_REGISTRAR_IP: &str = "127.0.0.1";
+ pub static DEFAULT_REGISTRAR_PORT: u32 = 8890;
++pub static DEFAULT_REGISTRAR_TLS_PORT: u32 = 8891;
+ pub static DEFAULT_REGISTRAR_TLS_ENABLED: bool = false;
+ pub static DEFAULT_REGISTRAR_TLS_CA_CERT: &str = "cv_ca/cacert.crt";
+ pub static DEFAULT_KEYLIME_DIR: &str = "/var/lib/keylime";
+@@ -140,6 +141,7 @@ pub struct AgentConfig {
+     pub port: u32,
+     pub registrar_ip: String,
+     pub registrar_port: u32,
++    pub registrar_tls_port: u32,
+     pub registrar_tls_enabled: bool,
+     pub registrar_tls_ca_cert: String,
+     pub run_as: String,
+@@ -318,6 +320,7 @@ impl Default for AgentConfig {
+             port: DEFAULT_PORT,
+             registrar_ip: DEFAULT_REGISTRAR_IP.to_string(),
+             registrar_port: DEFAULT_REGISTRAR_PORT,
++            registrar_tls_port: DEFAULT_REGISTRAR_TLS_PORT,
+             registrar_tls_enabled: DEFAULT_REGISTRAR_TLS_ENABLED,
+             registrar_tls_ca_cert: "default".to_string(),
+             revocation_actions: DEFAULT_REVOCATION_ACTIONS.to_string(),
+diff --git a/keylime/src/config/push_model.rs b/keylime/src/config/push_model.rs
+index 644051196..0e461c381 100644
+--- a/keylime/src/config/push_model.rs
++++ b/keylime/src/config/push_model.rs
+@@ -70,6 +70,7 @@ pub struct PushModelConfig {
+     registrar_api_versions: Vec<&str>,
+     registrar_ip: String,
+     registrar_port: u32,
++    registrar_tls_port: u32,
+     registrar_tls_enabled: bool,
+     registrar_tls_ca_cert: String,
+     tpm_encryption_alg: String,
+@@ -113,6 +114,7 @@ mod tests {
+         assert_eq!(config.enable_iak_idevid(), DEFAULT_ENABLE_IAK_IDEVID);
+         assert_eq!(config.registrar_ip(), DEFAULT_REGISTRAR_IP);
+         assert_eq!(config.registrar_port(), DEFAULT_REGISTRAR_PORT);
++        assert_eq!(config.registrar_tls_port(), DEFAULT_REGISTRAR_TLS_PORT);
+         assert_eq!(
+             config.uefi_logs_evidence_version(),
+             DEFAULT_UEFI_LOGS_EVIDENCE_VERSION
+diff --git a/keylime/src/config/testing.rs b/keylime/src/config/testing.rs
+index 94b52f978..4f666fb33 100644
+--- a/keylime/src/config/testing.rs
++++ b/keylime/src/config/testing.rs
+@@ -58,7 +58,7 @@ fn apply_config_overrides(
+ ) {
+     use crate::config::{
+         DEFAULT_CONTACT_PORT, DEFAULT_PORT, DEFAULT_REGISTRAR_PORT,
+-        DEFAULT_REVOCATION_NOTIFICATION_PORT,
++        DEFAULT_REGISTRAR_TLS_PORT, DEFAULT_REVOCATION_NOTIFICATION_PORT,
+     };
+ 
+     for (key, value) in overrides {
+@@ -100,6 +100,10 @@ fn apply_config_overrides(
+                 config.registrar_port =
+                     value.parse().unwrap_or(DEFAULT_REGISTRAR_PORT);
+             }
++            "registrar_tls_port" => {
++                config.registrar_tls_port =
++                    value.parse().unwrap_or(DEFAULT_REGISTRAR_TLS_PORT);
++            }
+             "run_as" => config.run_as = value,
+             "tpm_encryption_alg" => config.tpm_encryption_alg = value,
+             "tpm_hash_alg" => config.tpm_hash_alg = value,
+
+From 734a87c458bd644828805eaffa994cb4b7e0bd98 Mon Sep 17 00:00:00 2001
+From: Anderson Toshiyuki Sasaki <ansasaki@redhat.com>
+Date: Tue, 10 Mar 2026 10:48:24 +0100
+Subject: [PATCH 2/2] Use port constants instead of hardcoded values in tests
+
+Replace hardcoded port numbers (8891) with DEFAULT_REGISTRAR_TLS_PORT in
+registrar client tests for consistency.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Signed-off-by: Anderson Toshiyuki Sasaki <ansasaki@redhat.com>
+---
+ keylime/src/registrar_client.rs | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/keylime/src/registrar_client.rs b/keylime/src/registrar_client.rs
+index 3fb2f9686..7750a381e 100644
+--- a/keylime/src/registrar_client.rs
++++ b/keylime/src/registrar_client.rs
+@@ -700,7 +700,10 @@ impl RegistrarClient {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+-    use crate::{agent_identity::AgentIdentityBuilder, crypto};
++    use crate::{
++        agent_identity::AgentIdentityBuilder,
++        config::DEFAULT_REGISTRAR_TLS_PORT, crypto,
++    };
+     use wiremock::matchers::{method, path};
+     use wiremock::{Mock, MockServer, ResponseTemplate};
+ 
+@@ -1407,7 +1410,7 @@ mod tests {
+             }
+ 
+             if to_add.contains(&"registrar_port") {
+-                builder = builder.registrar_port(8891);
++                builder = builder.registrar_port(DEFAULT_REGISTRAR_TLS_PORT);
+             }
+ 
+             let result = builder.build().await;
+@@ -1475,13 +1478,13 @@ mod tests {
+     async fn test_builder_chaining_with_tls() {
+         let builder = RegistrarClientBuilder::new()
+             .registrar_address("127.0.0.1".to_string())
+-            .registrar_port(8891)
++            .registrar_port(DEFAULT_REGISTRAR_TLS_PORT)
+             .ca_certificate("/path/to/ca.pem".to_string())
+             .disable_tls(false)
+             .timeout(5000);
+ 
+         assert_eq!(builder.registrar_address, Some("127.0.0.1".to_string()));
+-        assert_eq!(builder.registrar_port, Some(8891));
++        assert_eq!(builder.registrar_port, Some(DEFAULT_REGISTRAR_TLS_PORT));
+         assert_eq!(
+             builder.ca_certificate,
+             Some("/path/to/ca.pem".to_string())

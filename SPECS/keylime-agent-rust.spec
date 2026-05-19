@@ -2,7 +2,7 @@
 ## (rpmautospec version 0.6.5)
 ## RPMAUTOSPEC: autorelease, autochangelog
 %define autorelease(e:s:pb:n) %{?-p:0.}%{lua:
-    release_number = 2;
+    release_number = 3;
     base_release_number = tonumber(rpm.expand("%{?-b*}%{!?-b:1}"));
     print(release_number + base_release_number - 1);
 }%{?-e:.%{-e*}}%{?-s:.%{-s*}}%{!?-n:%{?dist}}
@@ -25,9 +25,9 @@
 %endif
 
 Name:           keylime-agent-rust
-Version:        0.2.7
+Version:        0.2.9
 Release:        %{?autorelease}%{!?autorelease:1%{?dist}}
-Summary:        Rust agent for Keylime
+Summary:        The Keylime agent
 
 # Upstream license specification: Apache-2.0
 #
@@ -53,29 +53,41 @@ URL:            https://github.com/keylime/rust-keylime/
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
 # The vendor tarball is created using cargo-vendor-filterer to remove Windows
 # related files (https://github.com/cgwalters/cargo-vendor-filterer)
-#   tar xf rust-keylime-%%{version}.tar.gz
+#   tar xf rust-keylime-%%{version}.tar.zstd
 #   cd rust-keylime-%%{version}
 #   cargo vendor-filterer --platform x86_64-unknown-linux-gnu \
 #       --platform powerpc64le-unknown-linux-gnu \
 #       --platform aarch64-unknown-linux-gnu \
 #       --platform i686-unknown-linux-gnu \
 #       --platform s390x-unknown-linux-gnu \
-#       --exclude-crate-path "libloading#tests"
-#   tar jcf rust-keylime-%%{version}-vendor.tar.xz vendor
-Source1:        rust-keylime-%{version}-vendor.tar.xz
+#       --exclude-crate-path "libloading#tests" \
+#       --prefix=vendor --format=tar.zstd
+#   Rename the vendor.tar.zstd tarball to rust-keylime-%%{version}-vendor.tar.zstd
+Source1:        rust-keylime-%{version}-vendor.tar.zstd
 ## (0-99) General patches
-# Enable logging for the keylime library
-# Patch from https://github.com/keylime/rust-keylime/pull/922
-Patch0:         rust-keylime-enable-logging-keylime-lib.patch
 # Drop completely the legacy-python-actions feature
-Patch1:         rust-keylime-metadata.patch
-# Update to openssl 0.10.70 to fix CVE-2025-24898
-# Patch from https://github.com/keylime/rust-keylime/pull/926
-Patch2:         rust-keylime-openssl-0.10.70.patch
+Patch1:         0001-rust-keylime-metadata.patch
+# Do not require /usr/libexec/keylime to be present
+Patch2:         0002-rust-keylime-do-not-require-usr-libexec.patch
+# Use the correct registrar port when TLS is enabled
+# Backported from https://github.com/keylime/rust-keylime/pull/1204
+Patch3:         0003-rust-keylime-registrar-tls-port.patch
+
 ## (100-199) Patches for building from system Rust libraries (Fedora)
 ## (200+) Patches for building from vendored Rust libraries (RHEL)
 
 ExclusiveArch:  %{rust_arches}
+
+BuildRequires:  clang
+BuildRequires:  git-core
+BuildRequires:  openssl-devel
+BuildRequires:  systemd
+BuildRequires:  tpm2-tss-devel
+%if 0%{?bundled_rust_deps}
+BuildRequires:  rust-toolset
+%else
+BuildRequires:  rust-packaging >= 21-2
+%endif
 
 Requires: tpm2-tss
 Requires: util-linux-core
@@ -86,33 +98,96 @@ Requires: util-linux-core
 Requires: keylime-base
 %endif
 
-BuildRequires:  systemd
-BuildRequires:  openssl-devel
-BuildRequires:  libarchive-devel
-BuildRequires:  tpm2-tss-devel
-BuildRequires:  clang
-%if 0%{?bundled_rust_deps}
-BuildRequires:  rust-toolset
-%else
-BuildRequires:  rust-packaging >= 21-2
-%endif
+# Requires common files from exact same release
+Requires: keylime-agent-rust-common = %{version}-%{release}
+# Require the IMA emulator
+Requires: keylime-agent-rust-ima-emulator%{?_isa} = %{version}-%{release}
 
-# Virtual Provides to support swapping between Python and Rust implementation
-Provides:       keylime-agent
-Conflicts:      keylime-agent
+# Virtual Provides to support swapping between pull and push model agents
+Provides: keylime-agent = %{version}-%{release}
 
 %description
-Rust agent for Keylime
+The Keylime agent
+
+#===============================================================================
+
+%package common
+Summary:   Common files for Keylime agent
+License:   (Apache-2.0 OR MIT) AND BSD-3-Clause AND (MIT OR Apache-2.0) AND Unicode-DFS-2016 AND (Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 OR MIT OR Zlib) AND Apache-2.0 WITH LLVM-exception AND ISC AND MIT AND (MIT OR Unlicense)
+BuildArch: noarch
+
+# The old unsplit keylime-agent-rust shipped files now owned by -common
+# (agent.conf, config dirs). This conflict ensures the split packages are
+# removed on downgrade to avoid file conflicts.
+Conflicts: keylime-agent-rust < 0.2.9
+
+%description common
+Common files for the Keylime agent in both push and pull models
+
+#===============================================================================
+
+%package push
+Summary:        The Keylime agent for push model deployment
+License: (Apache-2.0 OR MIT) AND BSD-3-Clause AND (MIT OR Apache-2.0) AND Unicode-DFS-2016 AND (Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 OR MIT OR Zlib) AND Apache-2.0 WITH LLVM-exception AND ISC AND MIT AND (MIT OR Unlicense)
+Requires:       tpm2-tss
+Requires:       util-linux-core
+
+# Requires common files from exact same release
+Requires: keylime-agent-rust-common = %{version}-%{release}
+# Require the IMA emulator
+Requires: keylime-agent-rust-ima-emulator%{?_isa} = %{version}-%{release}
+
+# The keylime-base package provides the keylime user creation. It is available
+# from Fedora 36
+%if 0%{?fedora} >= 36 || 0%{?rhel} >= 9
+Requires:       keylime-base
+%endif
+
+# Virtual Provides to support swapping between pull and push model agents
+Provides:       keylime-agent = %{version}-%{release}
+
+%description push
+The Keylime agent for push model deployment
+
+#===============================================================================
+
+%package ima-emulator
+Summary:        The Keylime IMA emulator
+License: (Apache-2.0 OR MIT) AND BSD-3-Clause AND (MIT OR Apache-2.0) AND Unicode-DFS-2016 AND (Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT) AND (Apache-2.0 OR BSL-1.0) AND (Apache-2.0 OR MIT) AND (Apache-2.0 OR MIT OR Zlib) AND Apache-2.0 WITH LLVM-exception AND ISC AND MIT AND (MIT OR Unlicense)
+Requires:       tpm2-tss
+
+# Requires common files from exact same release
+Requires:       keylime-agent-rust-common = %{version}-%{release}
+
+# The keylime-base package provides the keylime user creation. It is available
+# from Fedora 36
+%if 0%{?fedora} >= 36 || 0%{?rhel} >= 9
+Requires:       keylime-base
+%endif
+
+# The old unsplit keylime-agent-rust shipped keylime_ima_emulator binary.
+# This conflict ensures the split packages are removed on downgrade to avoid
+# file conflicts.
+Conflicts: keylime-agent-rust < 0.2.9
+
+Provides:       keylime-ima-emulator = %{version}-%{release}
+
+%description ima-emulator
+The Keylime IMA emulator for testing with emulated TPM
+
+#===============================================================================
 
 %prep
-%autosetup -n rust-keylime-%{version} -N %{?bundled_rust_deps:-a1}
+%autosetup -S git -n rust-keylime-%{version} -N %{?bundled_rust_deps:-a1}
 %autopatch -M 99 -p1
 %if 0%{?bundled_rust_deps}
 # Source1 is vendored dependencies
 %cargo_prep -v vendor
-%autopatch -m 200 -p1
+# Add back the line below if patches are added (do not forget the '%')
+# autopatch -m 200 -p1
 %else
-%autopatch -m 100 -M 199 -p1
+# Add back the line below if patches are added (do not forget the '%')
+# autopatch -m 100 -M 199 -p1
 %cargo_prep
 %generate_buildrequires
 %cargo_generate_buildrequires
@@ -130,7 +205,6 @@ Rust agent for Keylime
 
 mkdir -p %{buildroot}/%{_sharedstatedir}/keylime
 mkdir -p --mode=0700 %{buildroot}/%{_rundir}/keylime
-mkdir -p --mode=0700 %{buildroot}/%{_libexecdir}/keylime
 mkdir -p --mode=0700  %{buildroot}/%{_sysconfdir}/keylime
 mkdir -p --mode=0700  %{buildroot}/%{_sysconfdir}/keylime/agent.conf.d
 
@@ -142,6 +216,9 @@ install -Dpm 644 ./dist/systemd/system/keylime_agent.service \
 
 install -Dpm 644 ./dist/systemd/system/var-lib-keylime-secure.mount \
     %{buildroot}%{_unitdir}/var-lib-keylime-secure.mount
+
+install -Dpm 644 ./dist/systemd/system/keylime_push_model_agent.service \
+    %{buildroot}%{_unitdir}/keylime_push_model_agent.service
 
 # Setting up the agent to use keylime:keylime user/group after dropping privileges.
 cat > %{buildroot}/%{_sysconfdir}/keylime/agent.conf.d/001-run_as.conf << EOF
@@ -155,6 +232,9 @@ install -Dpm 0755 \
 install -Dpm 0755 \
     -t %{buildroot}%{_bindir} \
     ./target/release/keylime_ima_emulator
+install -Dpm 0755 \
+    -t %{buildroot}%{_bindir} \
+    ./target/release/keylime_push_model_agent
 
 %posttrans
 chmod 500 %{_sysconfdir}/keylime/agent.conf.d
@@ -163,30 +243,47 @@ chmod 500 %{_sysconfdir}/keylime
 chown -R keylime:keylime %{_sysconfdir}/keylime
 
 %preun
+%systemd_preun keylime_push_model_agent.service
 %systemd_preun keylime_agent.service
 %systemd_preun var-lib-keylime-secure.mount
 
 %postun
+%systemd_postun_with_restart keylime_push_model_agent.service
 %systemd_postun_with_restart keylime_agent.service
 %systemd_postun_with_restart var-lib-keylime-secure.mount
 
-%files
+%files common
 %license LICENSE
-%license LICENSE.dependencies
-%if 0%{?bundled_rust_deps}
-%license cargo-vendor.txt
-%endif
 %doc README.md
 %attr(500,keylime,keylime) %dir %{_sysconfdir}/keylime
 %attr(500,keylime,keylime) %dir %{_sysconfdir}/keylime/agent.conf.d
 %config(noreplace) %attr(400,keylime,keylime) %{_sysconfdir}/keylime/agent.conf.d/001-run_as.conf
 %config(noreplace) %attr(400,keylime,keylime) %{_sysconfdir}/keylime/agent.conf
-%{_unitdir}/keylime_agent.service
-%{_unitdir}/var-lib-keylime-secure.mount
 %attr(700,keylime,keylime) %dir %{_rundir}/keylime
 %attr(700,keylime,keylime) %{_sharedstatedir}/keylime
-%attr(700,keylime,keylime) %{_libexecdir}/keylime
+
+%files
+%license LICENSE.dependencies
+%if 0%{?bundled_rust_deps}
+%license cargo-vendor.txt
+%endif
+%{_unitdir}/keylime_agent.service
+%{_unitdir}/var-lib-keylime-secure.mount
 %{_bindir}/keylime_agent
+
+%files push
+%license LICENSE.dependencies
+%if 0%{?bundled_rust_deps}
+%license cargo-vendor.txt
+%endif
+%{_unitdir}/keylime_push_model_agent.service
+%{_bindir}/keylime_push_model_agent
+
+%files ima-emulator
+%license LICENSE.dependencies
+%if 0%{?bundled_rust_deps}
+%license cargo-vendor.txt
+%endif
 %{_bindir}/keylime_ima_emulator
 
 %if %{with check}
@@ -196,6 +293,21 @@ chown -R keylime:keylime %{_sysconfdir}/keylime
 
 %changelog
 ## START: Generated by rpmautospec
+* Thu Apr 23 2026 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.9-3
+- Fix upgrade to not remove keylime-agent-rust
+
+* Wed Apr 01 2026 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.9-2
+- Use correct port when registrar TLS is enabled
+
+* Mon Feb 16 2026 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.9-1
+- Update to upstream version 0.2.9
+
+* Mon Oct 06 2025 Sergio Correia <scorreia@redhat.com> - 0.2.7-4
+- Enable ECC attestation
+
+* Mon Sep 29 2025 Sergio Correia <scorreia@redhat.com> - 0.2.7-3
+- Enable different key sizes and curves for EK and AK
+
 * Fri Feb 07 2025 Anderson Toshiyuki Sasaki <ansasaki@redhat.com> - 0.2.7-2
 - Update openssl crate to version 0.10.70
 
